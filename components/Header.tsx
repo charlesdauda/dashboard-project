@@ -14,17 +14,14 @@ const Header = ()  => {
                     width={140}
                     height={32}
                     className="h-8 w-auto cursor-pointer"
-                    style={{ width: "auto" }}
-                />
+                    style={{ width: "auto" }} />
                 </Link>
                 <nav className="hidden sm:block">
-                    {/*NavItems */}
                     <NavItems />
                 </nav>
                 <UserDropdown />
             </div>
         </header>
     )
-};
-
+}; 
 export default Header;
