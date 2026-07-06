@@ -1,9 +1,9 @@
- const NAV_ITEMS = [
+export const NAV_ITEMS = [
     { href: '/', label: 'Dashboard' },
     { href: '/search', label: 'Search' },
     { href: '/watchlist', label: 'Watchlist' },
 ];
-export default NAV_ITEMS;
+
 
 // Sign-up form select options
 export const INVESTMENT_GOALS = [
