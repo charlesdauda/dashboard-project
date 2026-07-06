@@ -5,12 +5,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import NavItems from "./NavItems";
-const UserDropdown = () => {
+import { signOut } from "@/lib/actions/auth_actions";
+const UserDropdown = ({user}: {user: User}) => {
     const router = useRouter();
     const handleSignOut = async  () => {
+        await signOut()
         router.push('/sign-in');
     }
-    const user = {name: 'John', email: 'contact@jsmastery.com'};
     return (
         <DropdownMenu>
   <DropdownMenuTrigger asChild>
