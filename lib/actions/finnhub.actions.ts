@@ -2,21 +2,14 @@
 
 import { getDateRange, validateArticle, formatArticle } from '@/lib/utils';
 import { POPULAR_STOCK_SYMBOLS } from '@/lib/constants';
-import { cache } from 'react';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 const NEXT_PUBLIC_FINNHUB_API_KEY = process.env.NEXT_PUBLIC_FINNHUB_API_KEY ?? '';
 
 async function fetchJSON<T>(url: string, revalidateSeconds?: number): Promise<T> {
   const options: RequestInit & { next?: { revalidate?: number } } = revalidateSeconds
-    ? {
-        // Revalidate on an interval.
-        next: { revalidate: revalidateSeconds },
-      }
-    : {
-        // Default to cached fetches when no revalidation window is provided.
-        cache: 'force-cache',
-      };
+    ? { next: { revalidate: revalidateSeconds } }
+    : { cache: 'force-cache' };
 
   const res = await fetch(url, options);
   if (!res.ok) {
@@ -30,16 +23,14 @@ export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> 
   try {
     const range = getDateRange(5);
     const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
-    if (!token) {
-      throw new Error('FINNHUB API key is not configured');
-    }
+    if (!token) throw new Error('FINNHUB API key is not configured');
+
     const cleanSymbols = (symbols || [])
       .map((s) => s?.trim().toUpperCase())
       .filter((s): s is string => Boolean(s));
 
     const maxArticles = 6;
 
-    // If we have symbols, try to fetch company news per symbol and round-robin select
     if (cleanSymbols.length > 0) {
       const perSymbolArticles: Record<string, RawNewsArticle[]> = {};
 
@@ -57,7 +48,6 @@ export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> 
       );
 
       const collected: MarketNewsArticle[] = [];
-      // Round-robin up to 6 picks
       for (let round = 0; round < maxArticles; round++) {
         for (let i = 0; i < cleanSymbols.length; i++) {
           const sym = cleanSymbols[i];
@@ -72,14 +62,11 @@ export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> 
       }
 
       if (collected.length > 0) {
-        // Sort by datetime desc
         collected.sort((a, b) => (b.datetime || 0) - (a.datetime || 0));
         return collected.slice(0, maxArticles);
       }
-      // If none collected, fall through to general news
     }
 
-    // General market news fallback or when no symbols provided
     const generalUrl = `${FINNHUB_BASE_URL}/news?category=general&token=${token}`;
     const general = await fetchJSON<RawNewsArticle[]>(generalUrl, 300);
 
@@ -91,69 +78,50 @@ export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> 
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(art);
-      if (unique.length >= 20) break; // cap early before final slicing
+      if (unique.length >= 20) break;
     }
 
-    const formatted = unique.slice(0, maxArticles).map((a, idx) => formatArticle(a, false, undefined, idx));
-    return formatted;
+    return unique.slice(0, maxArticles).map((a, idx) => formatArticle(a, false, undefined, idx));
   } catch (err) {
     console.error('getNews error:', err);
     throw new Error('Failed to fetch news');
   }
 }
 
-export const searchStocks = cache(async (query?: string): Promise<StockWithWatchlistStatus[]> => {
+export async function searchStocks(query?: string): Promise<StockWithWatchlistStatus[]> {
   try {
     const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
     if (!token) {
-      // If no token, log and return empty to avoid throwing per requirements
-      console.error(
-        'Error in stock search: FINNHUB_API_KEY is not configured. Set FINNHUB_API_KEY or NEXT_PUBLIC_FINNHUB_API_KEY in .env.local',
-      );
+      console.error('FINNHUB_API_KEY is not configured. Set it in .env.local');
       return [];
     }
 
-    // Helpful debug: avoid printing the full key.
-    console.log('Finnhub token configured:', token.length >= 10);
-
-
-
-
-
     const trimmed = typeof query === 'string' ? query.trim() : '';
-
     let results: FinnhubSearchResult[] = [];
 
     if (!trimmed) {
-      // Fetch top 10 popular symbols' profiles
       const top = POPULAR_STOCK_SYMBOLS.slice(0, 10);
       const profiles = await Promise.all(
         top.map(async (sym) => {
           try {
             const url = `${FINNHUB_BASE_URL}/stock/profile2?symbol=${encodeURIComponent(sym)}&token=${token}`;
-            // Revalidate every hour
             const profile = (await fetchJSON<unknown>(url, 3600)) as {
               name?: string;
               ticker?: string;
               exchange?: string;
             } | null;
-            return { sym, profile } as { sym: string; profile: typeof profile };
+            return { sym, profile };
           } catch (e) {
-            const errMsg = e instanceof Error ? e.message : String(e);
-            console.error('Finhub profile2 failed for', { sym, errMsg });
-            return { sym, profile: null } as { sym: string; profile: null };
+            console.error('Finnhub profile2 failed for', sym, e instanceof Error ? e.message : e);
+            return { sym, profile: null };
           }
         })
       );
 
-      type Profile2 = { name?: string; ticker?: string; exchange?: string } | null;
-
       results = profiles
         .map(({ sym, profile }) => {
           const symbol = sym.toUpperCase();
-          const p = profile as Profile2;
-          const name: string | undefined = p?.name || p?.ticker || undefined;
-          const exchange: string | undefined = p?.exchange || undefined;
+          const name = profile?.name || profile?.ticker || undefined;
           if (!name) return undefined;
 
           const r: FinnhubSearchResult = {
@@ -162,54 +130,36 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
             displaySymbol: symbol,
             type: 'Common Stock',
           };
-
-          // Attach exchange via a safe cast so ESLint/TS don't require `any`.
-          (r as unknown as { __exchange?: string }).__exchange = exchange;
+          (r as unknown as { __exchange?: string }).__exchange = profile?.exchange;
           return r;
         })
         .filter((x): x is FinnhubSearchResult => x !== undefined);
     } else {
       const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(trimmed)}&token=${token}`;
-      try {
-        const data = await fetchJSON<FinnhubSearchResponse>(url, 1800);
-        results = Array.isArray(data?.result) ? data.result : [];
-        console.log('Finhub /search response:', {
-
-          query: trimmed,
-          resultCount: Array.isArray(data?.result) ? data.result.length : 0,
-        });
-      } catch (e) {
-
-        console.error('Finhub /search failed for query:', { query: trimmed, err: e instanceof Error ? e.message : String(e) });
-
-        throw e;
-      }
+      const data = await fetchJSON<FinnhubSearchResponse>(url, 1800);
+      results = Array.isArray(data?.result) ? data.result : [];
     }
 
-
-    const mapped: StockWithWatchlistStatus[] = results
+    return results
       .map((r) => {
         const upper = (r.symbol || '').toUpperCase();
-        const name = r.description || upper;
-        const exchangeFromDisplay = (r.displaySymbol as string | undefined) || undefined;
-        const exchangeFromProfile = (r as unknown as { __exchange?: string }).__exchange as string | undefined;
+        const exchange =
+          (r.displaySymbol as string | undefined) ||
+          (r as unknown as { __exchange?: string }).__exchange ||
+          'US';
 
-        const exchange = exchangeFromDisplay || exchangeFromProfile || 'US';
-        const type = r.type || 'Stock';
         const item: StockWithWatchlistStatus = {
           symbol: upper,
-          name,
+          name: r.description || upper,
           exchange,
-          type,
+          type: r.type || 'Stock',
           isInWatchlist: false,
         };
         return item;
       })
       .slice(0, 15);
-
-    return mapped;
   } catch (err) {
-    console.error('Error in stock search:', err);
+    console.error('Error in stock search:', err instanceof Error ? err.message : err);
     return [];
   }
-});
+}

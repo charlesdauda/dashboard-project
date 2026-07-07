@@ -12,16 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, TrendingUp } from "lucide-react"
 import Link from "next/link"
 import { searchStocks } from "@/lib/actions/finnhub.actions"
-
-type AnyFn = (...args: never[]) => unknown
-
-function useDebounce<T extends AnyFn>(fn: T, delay?: number) {
-  // No-op debounce for build stability.
-  // Intentionally keep `delay` for API compatibility.
-  void delay
-  return fn
-}
-
+import { useDebounce } from "@/hooks/useDebounce"
 
 type SearchCommandProps = {
   renderAs?: "button" | "text"
@@ -40,7 +31,6 @@ export default function SearchCommand({
   const [stocks, setStocks] = useState<StockWithWatchlistStatus[]>(initialStocks)
   const [error, setError] = useState<string | null>(null)
 
-
   const isSearchMode = !!searchTerm.trim()
   const displayStocks = isSearchMode ? stocks : stocks?.slice(0, 10)
 
@@ -56,7 +46,11 @@ export default function SearchCommand({
   }, [])
 
   const handleSearch = async () => {
-    if (!isSearchMode) return setStocks(initialStocks)
+    if (!isSearchMode) {
+      setStocks(initialStocks)
+      setError(null)
+      return
+    }
 
     setError(null)
     setLoading(true)
@@ -64,21 +58,19 @@ export default function SearchCommand({
       const results = await searchStocks(searchTerm)
       setStocks(results)
     } catch (e) {
-      setStocks([] as StockWithWatchlistStatus[])
-      const msg = e instanceof Error ? e.message : 'Failed to fetch stocks'
+      setStocks([])
+      const msg = e instanceof Error ? e.message : "Failed to fetch stocks"
       setError(msg)
     } finally {
       setLoading(false)
     }
   }
 
-
-
   const debouncedSearch = useDebounce(handleSearch, 300)
 
   useEffect(() => {
     debouncedSearch()
-  }, [searchTerm])
+  }, [searchTerm, debouncedSearch])
 
   const handleSelectStock = () => {
     setOpen(false)
@@ -99,7 +91,6 @@ export default function SearchCommand({
       )}
 
       <CommandDialog open={open} onOpenChange={setOpen} className="search-dialog">
-        {/* cmdk context root (required for CommandPrimitive.* components) */}
         <Command className="w-full">
           <div className="search-field">
             <CommandInput
@@ -108,23 +99,20 @@ export default function SearchCommand({
               placeholder="Search stocks..."
               className="search-input"
             />
-            {loading && <Loader2 className="search-loader" />}
+            {loading && <Loader2 className="search-loader animate-spin" />}
           </div>
 
           <CommandList className="search-list">
             {loading ? (
-              <CommandEmpty className="search-list-empty">Loading stocks...</CommandEmpty>
+              <div className="search-list-indicator">Loading stocks...</div>
             ) : displayStocks?.length === 0 ? (
-              <div className="search-list-indicator">
+              <CommandEmpty className="search-list-empty">
                 {error ? `Error: ${error}` : isSearchMode ? "No results found" : "No stocks available"}
-              </div>
+              </CommandEmpty>
             ) : (
               <ul>
-
                 <div className="search-count">
-                  {isSearchMode ? "Search results" : "Popular stocks"} {` `}({
-                    displayStocks?.length || 0
-                  })
+                  {isSearchMode ? "Search results" : "Popular stocks"} ({displayStocks?.length || 0})
                 </div>
                 {displayStocks?.map((stock) => (
                   <li key={stock.symbol} className="search-item">
