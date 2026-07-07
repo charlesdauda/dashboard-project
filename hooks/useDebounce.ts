@@ -1,15 +1,25 @@
-'use client';
+import { useCallback, useEffect, useRef } from "react";
 
-import { useCallback, useRef } from 'react';
+type AnyFn = (...args: never[]) => unknown;
 
-export function useDebounce(callback: () => void, delay: number) {
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+export function useDebounce<T extends AnyFn>(fn: T, delay = 300): () => void {
+  const fnRef = useRef(fn);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    return useCallback(() => {
-        if(timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
+  useEffect(() => {
+    fnRef.current = fn;
+  }, [fn]);
 
-        timeoutRef.current = setTimeout(callback, delay);
-    }, [callback, delay])
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  return useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      fnRef.current();
+    }, delay);
+  }, [delay]);
 }
